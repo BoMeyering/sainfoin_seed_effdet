@@ -1,3 +1,11 @@
+"""
+create_model.py
+Stand up training and inference models
+
+BoMeyering 2024
+"""
+
+import torch
 from effdet.config.model_config import efficientdet_model_param_dict
 from effdet import get_efficientdet_config, EfficientDet, DetBenchTrain, DetBenchPredict
 from effdet.efficientdet import HeadNet
@@ -51,3 +59,13 @@ if __name__ == '__main__':
     train_model = create_model(3, 640)
 
     inf_model = create_inference_model(3, 640)
+
+
+    X = torch.randn(1, 3, 640, 640)
+
+    target = {
+        'bbox': [[]],
+        'cls': []
+    }
+
+    train_model(X, target)

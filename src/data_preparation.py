@@ -1,3 +1,13 @@
+"""
+data_preparation.py
+
+Export annotations from LabelBox
+Perform train/test split
+Move images into proper directories
+
+BoMeyering 2025
+"""
+
 from dotenv import load_dotenv
 import os
 import labelbox as lb
@@ -57,6 +67,7 @@ print("line count: ", export_task.get_total_lines(stream_type=lb.StreamType.RESU
 
 df_list = []
 
+# Main loop through JSON results and append data to df_list
 print("Looping through results to create labels")
 for i in range(len(export_json)):
     data = export_json[i]
@@ -103,6 +114,7 @@ data_agg = res_df.group_by(pl.col('external_id'))\
     .pivot(values="count", index="external_id", on="feature_class", aggregate_function="first")\
     .fill_null(0)
 
+# Create quantiles for data stratification
 pod_quantiles = data_agg['pod'].qcut(quantiles=4, labels=['a', 'b', 'c', 'd'], allow_duplicates=True)
 seed_quantiles = data_agg['seed'].qcut(quantiles=4, labels=['a', 'b', 'c', 'd'], allow_duplicates=True)
 split_quantiles = data_agg['split'].qcut(quantiles=4, labels=['a', 'b', 'c', 'd'], allow_duplicates=True)
@@ -115,6 +127,7 @@ quantile_df = pl.DataFrame({
 
 print(data_agg.shape, quantile_df.shape)
 
+# Add quantiles to dataframe
 data_agg = pl.concat([data_agg, quantile_df], how='horizontal')
 
 data_agg.write_csv("data_agg.csv")
@@ -148,7 +161,7 @@ def split_mv_imgs(src_dir: str, train_dir: str, val_dir: str, id_df: pl.DataFram
 
     return train_list, val_list
 
-
+# Clear directories and move images
 train_list, val_list = split_mv_imgs(
     src_dir='./data/images/all_images',
     train_dir='./data/images/train/', 
@@ -157,7 +170,7 @@ train_list, val_list = split_mv_imgs(
     remove=True
 )
 
-
+# Separate train and val dataframes and write to csv
 print(train_list, val_list)
 train_df = res_df.filter(pl.col('external_id').is_in(train_list))
 val_df = res_df.filter(pl.col('external_id').is_in(val_list))
