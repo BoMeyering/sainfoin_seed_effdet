@@ -158,6 +158,12 @@ class EffDetTrainer(Trainer):
         for batch_idx, batch in enumerate(self.val_loader):
             # Send batch to _train_step and backpropagate
             loss_dict = self._val_step(batch)
+            print(loss_dict)
+            print(loss_dict.keys())
+            for k, v in loss_dict.items():
+                print(k)
+                print(type(v))
+                print(v.shape)
 
             predictions = loss_dict['detections']
 
@@ -184,8 +190,8 @@ class EffDetTrainer(Trainer):
 
     def train(self):
         for epoch in range(1, self.args.epochs+1):
-            train_loss = self._train_epoch(epoch)
-            print(train_loss)
+            # train_loss = self._train_epoch(epoch)
+            # print(train_loss)
             val_loss = self._val_epoch(epoch)
             print(val_loss)
 
