@@ -49,6 +49,7 @@ class TestWbfDetector(unittest.TestCase):
     Test the functionality of the WbfDetector class
     """
     def setUp(self):
+        """ Setup the TestWbfDetector class """
         self.args = argparse.Namespace()
         self.args.pred_conf_threshold = 0.2
         self.args.wbf_iou_threshold = 0.5
@@ -86,9 +87,11 @@ class TestWbfDetector(unittest.TestCase):
         self.wbf_detector = WbfDetector(self.args)
 
     def test_wbf_detector_init(self):
+        """ Test the __init__ method """
         self.assertEqual(type(self.wbf_detector.args), argparse.Namespace)
 
-    def test__format_sample_detections_errors(self):        
+    def test__format_sample_detections_errors(self):  
+        """ Test raise error for _format_sample_detections method """      
         # Check ValueError for wrong data type (list)
         with self.assertRaises(ValueError):
             self.wbf_detector._format_sample_detections(self.detections_list)
@@ -98,6 +101,7 @@ class TestWbfDetector(unittest.TestCase):
             self.wbf_detector._format_sample_detections(self.batch)
     
     def test__format_sample_detections_data(self):
+        """ Test data integrity for _format_sample_detections method """
         # Process correct dimensions
         detections, idx = self.wbf_detector._format_sample_detections(self.sample)
 
@@ -119,12 +123,13 @@ class TestWbfDetector(unittest.TestCase):
 
         
     def test__format_batch_detections_errors(self):
+        """ Test raise error for _format_batch_detections method """
         # Check ValueError for wrong data type
         with self.assertRaises(ValueError):
             self.wbf_detector._format_batch_detections(self.detections_list)
 
     def test__format_batch_detections_data(self):
-        
+        """ Test data integrity for _format_batch_detections method """
         for _ in range(100):
             # Set random batch size, num_det and create dummy detections
             batch_size = random.randint(1,10)
@@ -146,7 +151,7 @@ class TestWbfDetector(unittest.TestCase):
             )
 
     def test__run_wbf_errors(self):
-        
+        """ Test raise error for _run_wbf method """
         # Check ValueError for wrong data type
         with self.assertRaises(ValueError):
             self.wbf_detector._run_wbf(
@@ -175,7 +180,7 @@ class TestWbfDetector(unittest.TestCase):
             )
 
     def test__run_wbf_data(self):
-        
+        """ Test data integrity for _run_wbf method """
         # Create new batches, format, and send to _run_wbf method
         for _ in range(100):
             batch_size = random.randint(1, 8)
@@ -203,15 +208,9 @@ class TestWbfDetector(unittest.TestCase):
                 self.assertLessEqual(len(sample_box_list), num_det)
                 self.assertLessEqual(len(sample_confidence_list), num_det)
                 self.assertLessEqual(len(sample_class_list), num_det)
-        
-    def test__rescale_bboxes_errors(self):
-        pass
-
-    def test__rescale_bboxes_data(self):
-        pass
 
     def test_process_batch_errors(self):
-
+        """ Test raise error for process_batch method """
         # Check ValueError for wrong data type
         with self.assertRaises(ValueError):
             self.wbf_detector.process_batch(self.detections_list)
@@ -221,7 +220,7 @@ class TestWbfDetector(unittest.TestCase):
             self.wbf_detector.process_batch(self.sample.squeeze(0))
 
     def test_process_batch_data(self):
-        
+        """ Test data integrity for process_batch method """
         for _ in range(100):
             # Set random batch size, num_det and create dummy detections
             batch_size = random.randint(1,10)
