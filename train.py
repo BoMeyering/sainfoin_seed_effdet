@@ -128,8 +128,6 @@ def main(args: argparse.Namespace):
         num_workers=2
     )
 
-    
-
     trainer = EffDetTrainer(
         args=args, 
         model=model, 

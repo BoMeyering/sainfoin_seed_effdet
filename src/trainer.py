@@ -184,8 +184,8 @@ class EffDetTrainer(Trainer):
 
     def train(self):
         for epoch in range(1, self.args.epochs+1):
-            train_loss = self._train_epoch(epoch)
-            print(train_loss)
+            # train_loss = self._train_epoch(epoch)
+            # print(train_loss)
             val_loss = self._val_epoch(epoch)
             print(val_loss)
 

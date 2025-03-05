@@ -10,7 +10,7 @@ rgb_norm: data/annotations/dataset_norm.json
 
 # Model settings
 architecture: tf_efficientdet_d1
-img_size: 1024
+img_size: 640
 num_classes: 3
 wbf_iou_threshold: 0.5
 max_det_per_image: 300
