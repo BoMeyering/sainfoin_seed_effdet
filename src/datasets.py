@@ -120,6 +120,7 @@ class EffDetDataset(Dataset):
             "img_name": self.img_names[index],
             "img_size": (new_h, new_w),
             "img_scale": torch.tensor([1.0]),
+            "raw_img_size": img.shape[:2]
         }
 
         # Return the image and the target data
@@ -133,6 +134,7 @@ def collate_fn(batch):
     boxes = [target['bbox'] for target in targets]
     labels = [target['cls'] for target in targets]
     img_names = [target['img_name'] for target in targets]
+    raw_img_size = [target['raw_img_size'] for target in targets]
     img_size = torch.tensor([target['img_size'] for target in targets]).float()
     img_scale = torch.tensor([target['img_scale'] for target in targets]).float()
 
@@ -142,8 +144,13 @@ def collate_fn(batch):
         'img_size': img_size,
         'img_scale': img_scale
     }
+
+    img_stack_metadata = {
+        'img_names': img_names,
+        'raw_img_size': raw_img_size
+    }
         
-    return img_stack, targets, img_names
+    return img_stack, targets, img_stack_metadata
 
 if __name__ == '__main__':
     mp.set_start_method("spawn", force=True)
@@ -159,10 +166,6 @@ if __name__ == '__main__':
 
     img_dir = './data/images/train'
     label_path = './data/annotations/train_annotations.csv'
-    train_tfms = train_transforms()
-
-    # Instantiate dataset
-    train_dataset = EffDetDataset(img_dir=img_dir, label_path=label_path, transforms=train_tfms, label_map=mapping)
 
     args = argparse.Namespace
     setattr(args, 'architecture', 'tf_efficientdet_d1')
@@ -170,6 +173,10 @@ if __name__ == '__main__':
     setattr(args, 'img_size', 512)
     setattr(args, 'max_det_per_image', 300)
 
+    train_tfms = train_transforms(args)
+
+    # Instantiate dataset
+    train_dataset = EffDetDataset(img_dir=img_dir, label_path=label_path, transforms=train_tfms, label_map=mapping)
 
     model = create_model(args)
     model.eval()
@@ -187,14 +194,15 @@ if __name__ == '__main__':
     iter_loader = iter(train_dataloader)
 
     for batch in iter_loader:
-        images, annotations, img_names = batch
+        images, targets, img_stack_metadata = batch
         # print(images)
         # print(annotations)
         # print(img_names)
+        print(img_stack_metadata)
 
-        output = model(images, annotations)
+        # output = model(images, targets)
 
-        print(output['detections'].shape)
+        # print(output['detections'].shape)
 
     
 

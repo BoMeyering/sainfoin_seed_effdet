@@ -2,18 +2,21 @@
 # Directories and paths
 train_dir: data/images/train
 train_label_path: data/annotations/train_annotations.csv
+# train_dir: data/images/val
+# train_label_path: data/annotations/val_annotations.csv
 val_dir: data/images/val
 val_label_path: data/annotations/val_annotations.csv
+test_dir: data/images/test
+output_dir: output/inference
 checkpoint_dir: output/checkpoints
 label_map: data/annotations/label_map.json
 rgb_norm: data/annotations/dataset_norm.json
 
 # Model settings
-architecture: tf_efficientdet_d1
-img_size: 640
+architecture: tf_efficientdet_d2
+img_size: 1920
 num_classes: 3
-wbf_iou_threshold: 0.5
-max_det_per_image: 300
+max_det_per_image: 100
 
 # Optimizer
 optimizer: 
@@ -31,6 +34,13 @@ scheduler:
 
 # Training Settings
 run_name: 'test'
-epochs: 20
+epochs: 30
 batch_size: 2
-device: cpu
+device: cuda
+save_drawings: True
+
+# Evaluation Settings
+pred_conf_threshold: 0.2
+wbf_iou_threshold: 0.5
+skip_box_threshold: 0.001
+class_metrics: True

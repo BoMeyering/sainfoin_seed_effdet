@@ -16,7 +16,8 @@ import torch
 import torch.distributed as dist
 import numpy as np
 
-from src.eval import AverageMeterSet
+from src.eval import AverageMeterSet, EffDetEvalMetrics
+from src.utils.post_processing import WbfDetector
 # from src.fixmatch import get_pseudo_labels
 # from src.callbacks import ModelCheckpoint
 # from src.metrics import MetricLogger
@@ -69,11 +70,14 @@ class EffDetTrainer(Trainer):
         self.val_loader = val_loader
         self.optimizer = optimizer
         self.scheduler = scheduler
+        self.wbf_detector = WbfDetector(args)
+        self.metrics = EffDetEvalMetrics(class_metrics=args.class_metrics)
 
     def _train_step(self, batch: Tuple):
         """ Train one batch of images """
         # Unpack the batch
-        img_stack, targets, img_names = batch
+        img_stack, targets, _ = batch
+
         # Move image stack and targets to device
         img_stack = img_stack.to(self.args.device)
         targets = move_target_to_device(targets, device=self.args.device)
@@ -137,29 +141,48 @@ class EffDetTrainer(Trainer):
     def _val_step(self, batch: Tuple):
         """ Validate one batch of images """
         # Unpack the batch
-        img_stack, targets, img_names = batch
+        img_stack, targets, img_stack_metadata = batch
+
         # Move image stack and targets to device
         img_stack = img_stack.to(self.args.device)
         targets = move_target_to_device(targets, device=self.args.device)
 
         # Make forward pass over data
         loss_dict = self.model(img_stack, targets)
+        
+        # Move targets back to cpu
+        if self.args.device == 'gpu':
+            targets = move_target_to_device(targets, 'cpu')
 
-        return loss_dict
+        return loss_dict, targets, img_stack_metadata
 
     @torch.no_grad()
     def _val_epoch(self, epoch):
         self.model.eval()
         self.meters.reset()
+        self.metrics.reset()
 
         # Set progress bar and unpack batches
         p_bar = tqdm(range(len(self.val_loader)))
 
         for batch_idx, batch in enumerate(self.val_loader):
             # Send batch to _train_step and backpropagate
-            loss_dict = self._val_step(batch)
+            loss_dict, targets, img_stack_metadata = self._val_step(batch)
 
+            # Extract predictions and run weighted box fusion
             predictions = loss_dict['detections']
+            bboxes, scores, labels = self.wbf_detector.process_batch(predictions)
+            
+            # Package up the predictions
+            predictions_dict = {
+                'boxes': bboxes,
+                'scores': scores,
+                'labels': labels
+            }
+
+            # Update evaluation metrics
+            batch_metrics = self.metrics.forward(predictions_dict, targets)
+            print(batch_metrics)
 
             # Update loss meters
             self.meters.update("total_loss", loss_dict['loss'].item(), 1)
@@ -184,8 +207,8 @@ class EffDetTrainer(Trainer):
 
     def train(self):
         for epoch in range(1, self.args.epochs+1):
-            # train_loss = self._train_epoch(epoch)
-            # print(train_loss)
+            train_loss = self._train_epoch(epoch)
+            print(train_loss)
             val_loss = self._val_epoch(epoch)
             print(val_loss)
 
