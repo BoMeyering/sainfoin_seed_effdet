@@ -1,92 +1,74 @@
 """
-transforms.py
-Definitions for all image augmentations and transformations applied duing training and inference
-BoMeyering 2025
+src/transforms.py
+===========================
+This module defines image transformation utilities for object detection tasks.
+BoMeyering 2026
 """
 
-# Standard imports
-import torch
+import omegaconf
+import logging
+import os
+import json
 import albumentations as A
-from albumentations.pytorch.transforms import ToTensorV2
+from omegaconf import OmegaConf
+from albumentations.pytorch import ToTensorV2
+from typing import Iterable
+from src.utils.config import Norm
 
-def train_transforms(img_size: int=512, rgb_means: tuple[float, ...]=None, rgb_std: tuple[float, ...]=None) -> A.Compose:
-    """
-    Training transformations for image augmentation and preparation
-
-    Args:
-        img_size (int, optional): Integer value of the desired output image size as (int, int). 
-            Defaults to 512.
-        rgb_means (tuple[float, ...], optional): A tuple of three float values between 0 and 1
-            for the RGB channel normalization means. Defaults to None.
-        rgb_std (tuple[float, ...], optional): A tuple of three float values between 0 and 1
-            for the RGB channel normalization standard deviations. Defaults to None.
-
-    Returns:
-        A.Compose: A callable Albumentations Compose function
-    """
-    
-    # Check for defined means and std
-    if rgb_means is None or rgb_std is None:
-        print("no means passed")
-        rgb_means = [0.485, 0.456, 0.406]
-        rgb_std = [0.229, 0.224, 0.225]
-
+def get_train_transforms(rgb_means: Iterable[float]=(0.485, 0.456, 0.406), rgb_stds: Iterable[float]=(0.229, 0.224, 0.225), resize: int=512):
     return A.Compose(
         [   
-            A.Normalize(mean=rgb_means, std=rgb_std),
-            A.Resize(height=img_size, width=img_size, p=1),
-            A.HorizontalFlip(),
-            A.GaussianBlur(),
-            A.SafeRotate(p=.75),
-            A.ChannelShuffle(),
-            A.GridDistortion(),
-            A.PlasmaShadow([0.0, 0.2], roughness=1),
-            ToTensorV2(p=1)
+            A.Resize(height=resize, width=resize),
+            A.HorizontalFlip(p=0.5),
+            A.VerticalFlip(p=0.5),
+            A.RandomBrightnessContrast(p=0.2),
+            A.GaussianBlur(p=0.5),
+            A.Affine(scale=(0.8, 1.2), translate_percent=(0.0, 0.15), rotate=(-15, 15), p=0.50),
+            A.Normalize(mean=rgb_means, std=rgb_stds, max_pixel_value=255.0),
+            ToTensorV2(),
         ],
-        p=1.0,
-        bbox_params=A.BboxParams(
-            format='pascal_voc',
-            min_area=0,
-            min_visibility=0,
-            label_fields=['labels']
-        )
+        bbox_params=A.BboxParams(format='pascal_voc', label_fields=['labels'])
     )
 
-def val_transforms(img_size: int=512, rgb_means: tuple[float, ...]=None, rgb_std: tuple[float, ...]=None) -> A.Compose:
-    """
-    Validation transformations for image augmentation and preparation
-
-    Args:
-        img_size (int, optional): Integer value of the desired output image size as (int, int). 
-            Defaults to 512.
-        rgb_means (tuple[float, ...], optional): A tuple of three float values between 0 and 1
-            for the RGB channel normalization means. Defaults to None.
-        rgb_std (tuple[float, ...], optional): A tuple of three float values between 0 and 1
-            for the RGB channel normalization standard deviations. Defaults to None.
-
-    Returns:
-        A.Compose: A callable Albumentations Compose function
-    """
-
-    # Check for defined means and std
-    if rgb_means is None or rgb_std is None:
-        rgb_means = [0.485, 0.456, 0.406]
-        rgb_std = [0.229, 0.224, 0.225]
-
+def get_val_transforms(rgb_means: Iterable[float]=(0.485, 0.456, 0.406), rgb_stds: Iterable[float]=(0.229, 0.224, 0.225), resize: int=512):
     return A.Compose(
         [
-            A.Resize(height=img_size, width=img_size, p=1),
-            A.Normalize(mean=rgb_means, std=rgb_std),
-            ToTensorV2(p=1)
-        ], 
-        p=1.0, 
-        bbox_params=A.BboxParams(
-            format="pascal_voc", 
-            min_area=0,
-            min_visibility=0,
-            label_fields=['labels']
-        )
+            A.Resize(height=resize, width=resize),
+            A.Normalize(mean=rgb_means, std=rgb_stds, max_pixel_value=255.0),
+            ToTensorV2(),
+        ],
+        bbox_params=A.BboxParams(format='pascal_voc', label_fields=['labels'])
     )
 
+def get_inference_transforms(rgb_means: Iterable[float]=(0.485, 0.456, 0.406), rgb_stds: Iterable[float]=(0.229, 0.224, 0.225), resize: int=512):
+    return A.Compose(
+        [
+            A.Resize(height=resize, width=resize),
+            A.Normalize(mean=rgb_means, std=rgb_stds, max_pixel_value=255.0),
+            ToTensorV2(),
+        ]
+    )
 
+def set_normalization_values(conf: OmegaConf):
+    """_summary_
 
+    Args:
+        conf (OmegaConf): _description_
+    """
+
+    logger = logging.getLogger()
+    if not isinstance(conf, omegaconf.dictconfig.DictConfig):
+        raise ValueError(f"Argument 'conf' should be of type 'omegaconf.dictconfig.DictConfig'.")
+    
+    if 'metadata' in conf:
+        if (conf.metadata is not None) and ('norm_path' in conf.metadata):
+            if os.path.exists(conf.metadata.norm_path):
+                with open(conf.metadata.norm_path, 'r') as f:
+                    norm_dict = json.load(f)
+                    conf.metadata.norm = Norm(means=norm_dict['means'], std=norm_dict['std'])
+            else:
+                raise ValueError(f"Path to normalization values ({conf.metadata.norm_path}) does not exist")
+        else:
+            raise KeyError(f"Key 'norm_path' not found in 'conf.metadata'. Please set 'conf.metadata.norm_path' to the normalization value JSON path.")
+    else:
+        raise KeyError(f"Key 'metadata.norm_path' not found in 'conf'. Please set 'conf.metadata.norm_path' to the normalization value JSON path.")

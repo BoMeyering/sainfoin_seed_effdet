@@ -1,264 +1,184 @@
 """
-datasets.py
-Contains all of the code for creating training, validation, and testing datasets
-BoMeyering 2025
+src/datasets.py
+===========================
+This module defines dataset utilities for object detection tasks.
+BoMeyering 2026
 """
 
-import torch
 import os
+import torch
 import cv2
-import random
-
+import json
 import numpy as np
-import polars as pl
-import albumentations as A
-import torch.multiprocessing as mp
-
-from pathlib import Path
 from glob import glob
-from torch.utils.data import Dataset, DataLoader
-from transforms import train_transforms, val_transforms
+from torch.utils.data import Dataset
+from omegaconf import OmegaConf
+import albumentations as A
 
 class TrainDataset(Dataset):
-    """_summary_
-
-    Args:
-        Dataset (_type_): _description_
-    """
-
-    def __init__(self, img_dir: Path, label_path: Path, transforms: A.Compose, label_map: dict):
-        """
-        Initialize the training dataset
-        """
-        self.img_dir = img_dir
-        self.label_path = label_path
+    def __init__(self, conf: OmegaConf, transforms: A.Compose):
+        self.conf = conf
+        self.images_dir = self.conf.directories.train_dir
+        self.annotations_file = self.conf.directories.annotations_file
         self.transforms = transforms
-        self.label_map = label_map
 
-        self.img_names = []
-        self.img_labels = pl.read_csv(self.label_path)
+        with open(self.annotations_file, 'r') as f:
+            self.annotations = json.load(f)
 
-        # Build out image names in img_dir
-        extensions = ['JPG', 'PNG', 'JPEG', 'jpg', 'png', 'jpeg']
-        for ext in extensions:
-            names = glob("*" + ext, root_dir=self.img_dir)
-            self.img_names.extend(names)
-        
-        # Validate image names in directory and label dataframe
-        if len(self.img_names) != len(self.img_labels['external_id'].unique()):
-            raise AssertionError(
-                f"Number of training images, {len(self.img_names)}, "\
-                    "and unique target labels, "\
-                    f"{len(self.img_labels['external_id'].unique())}, "\
-                    "are not the same."
-                )
-        
-        for i in self.img_labels['external_id'].unique():
-            assert i in self.img_names
-
-        # Create numeric class for feature classes
-        self.img_labels = self.img_labels.with_columns(
-            pl.col('feature_class').replace_strict(self.label_map).alias('class')
-        )
+        self.image_ids = [id for id in glob("*", root_dir=self.images_dir) if id.endswith(('jpeg', 'jpg'))]
 
     def __len__(self):
-        """ Return the length (image number) of the dataset """
-        return len(self.img_names)
+        return len(self.image_ids)
 
     def __getitem__(self, idx):
-        """ Get one sample from the dataset using 'idx' """
-        
-        # Construct path to image
-        img_path = os.path.join(self.img_dir, self.img_names[idx])
+        image_id = self.image_ids[idx]
+        image_path = os.path.join(self.images_dir, image_id)
+        image = cv2.imread(image_path, cv2.IMREAD_COLOR_RGB | cv2.IMREAD_IGNORE_ORIENTATION)
 
-        # Read in image if path exists
-        if os.path.exists(img_path):
-            img = cv2.imread(img_path)
-            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        else:
-            raise FileExistsError(f"Could not find image file at path {img_path}")
-        
-        # Select bboxes in Pascal format
-        pascal_bboxes = self.img_labels.filter(
-            pl.col('external_id') ==  self.img_names[idx]
-        )["xmin", "ymin", "xmax", "ymax"].to_numpy()
+        targets = {}
+        boxes = np.array(self.annotations[image_id]['boxes'], dtype=np.float32)
+        labels = np.array(self.annotations[image_id]['labels'], dtype=np.int64)
 
-        # Grab obect labels
-        labels = self.img_labels.filter(pl.col('external_id') == self.img_names[idx])['class'].to_numpy()
+        transformed = self.transforms(image=image, bboxes=boxes, labels=labels)
+        image = transformed['image']
 
-        # Contruct sample dict for transforms
-        sample = {
-            "image": img,
-            "bboxes": pascal_bboxes,
-            "labels": labels,
-        }
+        targets['boxes'] = torch.tensor(transformed['bboxes'], dtype=torch.float32)
+        targets['labels'] = torch.tensor(transformed['labels'], dtype=torch.int64)
 
-        # Augment sample
-        sample = self.transforms(**sample)
-        _, new_h, new_w = sample['image'].shape
+        # if targets["boxes"].numel() == 0:
+        #     return None
 
-        # Convert to ymin, xmin, ymax, xmax
-        # EffDet requires [ymin, xmin, ymax, xmax] order
-        # If nothing present, advance to next sample
-        try:
-            sample["bboxes"][:, [0, 1, 2, 3]] = sample["bboxes"][:, [1, 0, 3, 2]]
-        except IndexError as e:
-            print('Transformed image contained no bounding boxes.\nAdvancing to next index.')
-            return self.__getitem__((idx + 1) % len(self))
-        
-        aug_img = sample['image']
-
-        target = {
-            "bbox": torch.as_tensor(sample["bboxes"], dtype=torch.float32),
-            "cls": torch.as_tensor(sample['labels']),
-            "image_id": torch.tensor([idx]),
-            "img_size": (new_h, new_w),
-            "img_scale": torch.tensor([1.0]),
-        }
-
-        # Return the image and the target data
-        return aug_img, target
-        
-
-class ValDataset(Dataset):
-    """_summary_
-
-    Args:
-        Dataset (_type_): _description_
-    """
-
-    def __init__(self, img_dir: Path, label_path: Path, transforms: A.Compose, label_map: dict):
-        """
-        Initialize the validation dataset
-        """
-        self.img_dir = img_dir
-        self.label_path = label_path
-        self.transforms = transforms
-        self.label_map = label_map
-
-        self.img_names = []
-        self.img_labels = pl.read_csv(self.label_path)
-
-        # Build out image names in img_dir
-        extensions = ['JPG', 'PNG', 'JPEG', 'jpg', 'png', 'jpeg']
-        for ext in extensions:
-            names = glob("*" + ext, root_dir=self.img_dir)
-            self.img_names.extend(names)
-        
-        # Validate image names in directory and label dataframe
-        if len(self.img_names) != len(self.img_labels['external_id'].unique()):
-            raise AssertionError(
-                f"Number of training images, {len(self.img_names)}, "\
-                    "and unique target labels, "\
-                    f"{len(self.img_labels['external_id'].unique())}, "\
-                    "are not the same."
-                )
-        
-        for i in self.img_labels['external_id'].unique():
-            assert i in self.img_names
-
-        # Create numeric class for feature classes
-        self.img_labels = self.img_labels.with_columns(
-            pl.col('feature_class').replace_strict(self.label_map).alias('class')
-        )
-
-    def __len__(self):
-        return len(self.img_names)
-
-    def __getitem__(self):
-        pass
-
-
-
-def collate_fn(batch):
-    batch = [b for b in batch if b is not None]  # Remove None entries
-
-    if len(batch) == 0:
-        return None, None  # Handle empty batch gracefully
-
-    images, targets = zip(*batch)
-
-    images = torch.stack(images, dim=0)
-        
-    return images, targets
-
-if __name__ == '__main__':
-    mp.set_start_method("spawn", force=True)
-    from torch.utils.data import DataLoader
-    mapping = {
-        "split": 1, 
-        "seed": 2,
-        "pod": 3
-    }
-
-    img_dir = './data/images/train'
-    label_path = './data/annotations/train_annotations.csv'
-    train_tfms = train_transforms()
-
-    train_dataset = TrainDataset(img_dir=img_dir, label_path=label_path, transforms=train_tfms, label_map=mapping)
-    # train_dataset = TestDataset('test', 30)
-
-    # for i in range(10):
-    #     train_dataset[i]
-
-    from create_model import create_model
-
-    model = create_model(num_classes=3, image_size=512)
-
-
-    train_dataloader = DataLoader(
-        dataset=train_dataset,
-        batch_size=2,
-        shuffle=True,
-        pin_memory=True,
-        drop_last=True,
-        num_workers=1,
-        collate_fn=collate_fn
-    )
-    # iter_loader = iter(train_dataloader)
-
-    # for batch in iter_loader:
-    #     images, targets = batch
-    #     print(images)
-
+        return image_id, image, targets
     
 
-    # for i in range(10):
-    #     image, target = train_dataset[i]
+class ValDataset(Dataset):
+    def __init__(self, conf: OmegaConf, transforms: A.Compose):
+        self.conf = conf
+        self.images_dir = self.conf.directories.val_dir
+        self.annotations_file = self.conf.directories.annotations_file
+        self.transforms = transforms
 
-    #     print(image.shape)
-    #     print(target)
-    #     print(type(target))
+        with open(self.annotations_file, 'r') as f:
+            self.annotations = json.load(f)
 
-    # for batch_idx in range(len(iter_loader)):
-    #     print(batch_idx)
-    #     images, targets = next(iter_loader)
+        self.image_ids = [id for id in glob("*", root_dir=self.images_dir) if id.endswith(('jpeg', 'jpg'))]
 
-    #     print(targets)
+    def __len__(self):
+        return len(self.image_ids)
 
-    # model.eval()
+    def __getitem__(self, idx):
+        image_id = self.image_ids[idx]
+        image_path = os.path.join(self.images_dir, image_id)
+        raw_image = cv2.imread(image_path, cv2.IMREAD_COLOR_RGB | cv2.IMREAD_IGNORE_ORIENTATION)
 
-    for i in range(10):
-        images, targets = tuple(zip(*(train_dataset[i], train_dataset[i])))
-        # print(images, targets)
-        img1, target1 = train_dataset[i]
-        img2, target2 = train_dataset[i]
+        targets = {}
+        boxes = np.array(self.annotations[image_id]['boxes'], dtype=np.float32)
+        labels = np.array(self.annotations[image_id]['labels'], dtype=np.int64)
 
-        img = torch.stack([img1, img2])
-        # print(img.shape)
+        transformed = self.transforms(image=raw_image, bboxes=boxes, labels=labels)
+        image = transformed['image']
 
-        annotations = {
-            'bbox': [target1['bbox'], target2['bbox']],
-            'cls': [target1['cls'], target2['cls']],
-            'img_scale': torch.tensor([target1['img_scale'], target2['img_scale']]).float(),
-            'img_size': torch.tensor([target1['img_size'], target2['img_size']]).float()
+        targets['boxes'] = torch.tensor(transformed['bboxes'], dtype=torch.float32)
+        targets['labels'] = torch.tensor(transformed['labels'], dtype=torch.int64)
+
+        if targets["boxes"].numel() == 0:
+            return None
+        
+        return image_id, image, targets, raw_image
+
+class InferenceDataset(Dataset):
+    def __init__(self, conf: OmegaConf, transforms: A.Compose):
+        self.conf = conf
+        self.images_dir = self.conf.directories.inference_dir
+        self.transforms = transforms
+
+        self.image_ids = [id for id in glob("*", root_dir=self.images_dir) if id.endswith(('jpeg', 'jpg'))]
+
+    def __len__(self):
+        return len(self.image_ids)
+
+    def __getitem__(self, idx):
+        image_id = self.image_ids[idx]
+        image_path = os.path.join(self.images_dir, image_id)
+        raw_image = cv2.imread(image_path, cv2.IMREAD_COLOR_RGB | cv2.IMREAD_IGNORE_ORIENTATION)
+
+        transformed = self.transforms(image=raw_image)
+        image = transformed['image']
+
+        return image_id, image, raw_image
+    
+class EffdetDataset(Dataset):
+    def __init__(self, conf: OmegaConf, transforms: A.Compose, type: str='train'):
+        self.conf = conf
+        self.images_dir = self.conf.directories.image_dir
+        if type == 'train':
+            self.annotations_file = self.conf.directories.train_annotations_file
+        else:
+            self.annotations_file = self.conf.directories.val_annotations_file
+        self.transforms = transforms
+
+        with open(self.annotations_file, 'r') as f:
+            self.annotations = json.load(f)
+
+        self.image_ids = [id for id in glob("*", root_dir=self.images_dir) if id.endswith(('jpeg', 'jpg'))]
+
+    def __len__(self):
+        return len(self.annotations.keys())
+
+    def __getitem__(self, idx):
+        image_id = list(self.annotations.keys())[idx]
+        image_path = os.path.join(self.images_dir, image_id)
+        image = cv2.imread(image_path, cv2.IMREAD_COLOR_RGB | cv2.IMREAD_IGNORE_ORIENTATION)
+
+        sample = {
+            "image": image,
+            "bboxes": np.array(self.annotations[image_id]['boxes'], dtype=np.float32),
+            "labels": np.array(self.annotations[image_id]['labels'], dtype=np.int64)
         }
-        # print(annotations)
 
+        sample = self.transforms(**sample)
+        sample["bboxes"] = np.array(sample["bboxes"], dtype=np.float32)
+        image = sample['image']
+        labels = sample['labels']
 
+        _, new_h, new_w = image.shape
+        sample["bboxes"][:, [0, 1, 2, 3]] = sample["bboxes"][:, [1, 0, 3, 2]]  # xyxy to yxyx
 
-        loss = model(img, annotations)
+        target = {
+            "bboxes": torch.as_tensor(sample["bboxes"], dtype=torch.float32),
+            "labels": torch.as_tensor(labels, dtype=torch.int64),
+            "image_id": torch.tensor([idx], dtype=torch.int64),
+            "img_size": (new_h, new_w),
+            "img_scale": torch.tensor([1.0])
+        }
 
-        print(loss)
+        return image, target, image_id
 
-    #     loss['loss'].backward()
+class EffdetInferenceDataset(Dataset):
+    def __init__(self, conf: OmegaConf, transforms: A.Compose):
+        self.conf = conf
+        self.images_dir = self.conf.directories.image_dir
+        self.annotations_file = self.conf.directories.val_annotations_file
+        self.transforms = transforms
+
+        with open(self.annotations_file, 'r') as f:
+            self.annotations = json.load(f)
+
+        self.image_ids = [id for id in glob("*", root_dir=self.images_dir) if id.endswith(('jpeg', 'jpg'))]
+
+    def __len__(self):
+        return len(self.annotations.keys())
+
+    def __getitem__(self, idx):
+        image_id = list(self.annotations.keys())[idx]
+        image_path = os.path.join(self.images_dir, image_id)
+        image = cv2.imread(image_path, cv2.IMREAD_COLOR_RGB | cv2.IMREAD_IGNORE_ORIENTATION)
+
+        sample = {
+            "image": image,
+        }
+
+        sample = self.transforms(**sample)
+        image = sample['image']
+
+        return image, image_id

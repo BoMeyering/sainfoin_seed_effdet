@@ -1,0 +1,46 @@
+# Model config file
+# Directories and paths
+train_dir: data/images/train
+train_label_path: data/annotations/train_annotations.csv
+# train_dir: data/images/val
+# train_label_path: data/annotations/val_annotations.csv
+val_dir: data/images/val
+val_label_path: data/annotations/val_annotations.csv
+test_dir: data/images/test
+output_dir: output/inference
+checkpoint_dir: output/checkpoints
+label_map: data/annotations/label_map.json
+rgb_norm: data/annotations/dataset_norm.json
+
+# Model settings
+architecture: tf_efficientdet_d2
+img_size: 1920
+num_classes: 3
+max_det_per_image: 100
+
+# Optimizer
+optimizer: 
+  name: AdamW
+  lr: 0.001
+  momentum: 0.99
+  nesterov: True
+  weight_decay: 0.01
+  filter_bias_and_bn: True
+
+# Learning Rate Scheduler
+scheduler: 
+  name: ExponentialLR
+  gamma: 0.8
+
+# Training Settings
+run_name: 'test'
+epochs: 30
+batch_size: 2
+device: cuda
+save_drawings: True
+
+# Evaluation Settings
+pred_conf_threshold: 0.2
+wbf_iou_threshold: 0.5
+skip_box_threshold: 0.001
+class_metrics: True

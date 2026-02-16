@@ -1,0 +1,6 @@
+# Inference Model Config
+model_chekpoint:
+img_size: 512
+pred_conf_threshold: 0.2
+wbf_iou_threshold: 0.5
+skip_box_threshold: 0.4
