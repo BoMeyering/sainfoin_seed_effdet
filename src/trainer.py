@@ -505,7 +505,15 @@ class EffdetTrainer(Trainer):
             # Extract prediction arrays
             pred_boxes = pred_array[:, :4].detach().float()
             pred_scores = pred_array[:, 4].detach().float()
-            pred_labels = pred_array[:, 5].detach().int() - 1  # Convert to zero-based class indices
+            pred_labels_raw = pred_array[:, 5].detach().int()
+
+            # Filter out invalid/background predictions before converting to zero-based labels.
+            # Some detections can have label 0; shifting those by -1 introduces a fake class (-1)
+            # in MeanAveragePrecision class-wise outputs.
+            valid_pred_mask = pred_labels_raw > 0
+            pred_boxes = pred_boxes[valid_pred_mask]
+            pred_scores = pred_scores[valid_pred_mask]
+            pred_labels = pred_labels_raw[valid_pred_mask] - 1  # Convert to zero-based class indices
             
             # Extract and format the targets
             target_boxes = target_boxes[:, [1, 0, 3, 2]].float()  # Convert from yxyx to xyxy

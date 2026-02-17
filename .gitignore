@@ -161,3 +161,8 @@ cython_debug/
 
 data/images
 data/annotations
+*.JPG
+*.jpg
+*.pth
+*.pt
+

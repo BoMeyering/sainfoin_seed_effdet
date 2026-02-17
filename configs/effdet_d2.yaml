@@ -26,13 +26,13 @@ directories:
 
 # Training
 training:
-  epochs: 30
+  epochs: 50
   sanity_check: True
 
 # Model Architecture
 model:
-  num_classes: 2
-  detections_per_img: 100
+  num_classes: 3
+  detections_per_img: 500
 
 # Optimizer stuff
 optimizer:

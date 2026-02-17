@@ -69,12 +69,12 @@ logger = logging.getLogger()
 set_torch_device(conf)
 
 # Set data normalization values
-set_normalization_values(conf)
+# set_normalization_values(conf)
 
 # Initialize Weights and Biases for experiment tracking - only on main process to avoid duplicates
 if conf.is_main:
     wandb.init(
-        project="roidetect_v2",
+        project="sainfoin_seed_effdet",
         entity="bomeyering-the-land-institute",
         name=conf.model_run,
         config=OmegaConf.to_container(conf, resolve=True),
@@ -137,13 +137,9 @@ def main(conf: omegaconf.OmegaConf=conf):
 
     # Augmentation Pipelines
     train_transforms = get_train_transforms(
-        rgb_means=conf.metadata.norm.means, 
-        rgb_stds=conf.metadata.norm.std, 
         resize=conf.images.resize
     )
     val_transforms = get_val_transforms(
-        rgb_means=conf.metadata.norm.means, 
-        rgb_stds=conf.metadata.norm.std,
         resize=conf.images.resize
     )
 

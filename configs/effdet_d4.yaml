@@ -1,5 +1,5 @@
 # Training configs
-model_run: effdet_d4_wd0.01
+model_run: effdet_d4_wd0.005
 
 # Computation Device
 device: cuda
@@ -26,18 +26,18 @@ directories:
 
 # Training
 training:
-  epochs: 30
+  epochs: 50
   sanity_check: True
 
 # Model Architecture
 model:
-  num_classes: 2
-  detections_per_img: 100
+  num_classes: 3
+  detections_per_img: 500
 
 # Optimizer stuff
 optimizer:
   name: AdamW
-  weight_decay: 0.01
+  weight_decay: 0.005
   filter_bias_and_bn: True
   ema: True
   ema_decay: 0.9

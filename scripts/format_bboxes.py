@@ -13,7 +13,7 @@ from shutil import copy2
 from glob import glob
 from scipy.stats import uniform
 
-PROJECT_ID = 'cml1weuzx0m3b073571jv9m22'
+PROJECT_ID = 'cll3qlz2202gv07z034gng0xa'
 
 with open('metadata/class_mapping.json', 'r') as f:
     class_map = json.load(f)
